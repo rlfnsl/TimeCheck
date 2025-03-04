@@ -49,7 +49,7 @@ class VoiceTrackerBot(discord.Client):
             if member.id in self.user_join_times:
                 join_time = self.user_join_times.pop(member.id)
                 duration = now - join_time
-                if duration >= timedelta(minutes=0):
+                if duration >= timedelta(minutes=20):
                     self.user_total_time[weekday].setdefault(str(member.id), 0)
                     self.user_daily_time[weekday].setdefault(str(member.id), 0)
                     self.user_total_time[weekday][str(member.id)] += duration.seconds

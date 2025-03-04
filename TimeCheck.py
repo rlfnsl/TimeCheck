@@ -3,8 +3,9 @@ import asyncio
 import json
 from datetime import datetime, timedelta
 import pytz
+import os
 
-TOKEN = ''  # 환경변수에서 토큰 가져오기
+TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 CHANNEL_ID = 1346156878111182910
 DATA_FILE = "voice_data.json"
 
@@ -48,6 +49,7 @@ class VoiceTrackerBot(discord.Client):
         elif before.channel is not None and after.channel is None:
             if member.id in self.user_join_times:
                 join_time = self.user_join_times.pop(member.id)
+                weekday = str(join_time.weekday())
                 duration = now - join_time
                 if duration >= timedelta(minutes=20):
                     self.user_total_time[weekday].setdefault(str(member.id), 0)

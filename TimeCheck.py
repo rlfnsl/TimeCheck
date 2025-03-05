@@ -17,6 +17,7 @@ class VoiceTrackerBot(discord.Client):
         self.user_join_times = {}  # {user_id: 입장시간}
         self.user_total_time = {str(i): {} for i in range(7)}  # {요일: {유저ID: 누적시간}}
         self.user_daily_time = {str(i): {} for i in range(7)}  # {요일: {유저ID: 하루 이용 시간}}
+        self.alarms = {}  # ✅ 알람 저장하는 딕셔너리 추가 ✅
         self.load_data()
 
     def load_data(self):
@@ -50,6 +51,8 @@ class VoiceTrackerBot(discord.Client):
         elif re.match(r"^!\d+$", message.content):  # "!숫자" 형식인지 확인
             minutes = int(message.content[1:])  # 숫자 부분만 추출
             await self.set_alarm(message, minutes)
+        elif message.content == "!알람삭제":
+            await self.cancel_alarm(message)
 
     async def on_voice_state_update(self, member, before, after):
         now = datetime.now(self.KST)
@@ -106,10 +109,29 @@ class VoiceTrackerBot(discord.Client):
         await channel.send(summary)
 
     async def set_alarm(self, message, minutes):
-        """입력된 시간(분) 후에 알람을 보냄"""
+        """입력된 시간(분) 후에 알람을 설정"""
+        if message.author.id in self.alarms:
+            await message.channel.send(f"⚠️ {message.author.mention}, 이미 설정된 알람이 있습니다! 먼저 삭제하세요. (`!알람삭제`)")
+            return
+        
+        task = asyncio.create_task(self.alarm_task(message, minutes))
+        self.alarms[message.author.id] = task  # 알람 저장
         await message.channel.send(f"⏳ {minutes}분 뒤에 알람을 설정했습니다! ({message.author.mention})")
-        await asyncio.sleep(minutes * 60)  # 입력된 분 * 60초 대기
+
+    async def alarm_task(self, message, minutes):
+        """알람 대기 및 실행"""
+        await asyncio.sleep(minutes * 60)
         await message.channel.send(f"⏰ {minutes}분이 지났습니다! ({message.author.mention})")
+        self.alarms.pop(message.author.id, None)  # 알람 완료 후 삭제
+
+    async def cancel_alarm(self, message):
+        """사용자가 설정한 알람 취소"""
+        if message.author.id in self.alarms:
+            self.alarms[message.author.id].cancel()  # 알람 취소
+            del self.alarms[message.author.id]  # 딕셔너리에서 제거
+            await message.channel.send(f"✅ {message.author.mention}, 알람을 삭제했습니다!")
+        else:
+            await message.channel.send(f"⚠️ {message.author.mention}, 삭제할 알람이 없습니다!")
 
     async def send_weekly_summary(self):
         await self.wait_until_ready()

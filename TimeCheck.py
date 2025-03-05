@@ -68,7 +68,7 @@ class VoiceTrackerBot(discord.Client):
 
     async def send_intermediate_summary(self, channel):
         """현재까지의 누적 스터디 시간을 정산하여 출력"""
-        summary = "**📊 현재까지의 음성 채널 이용 시간**\n"
+        summary = "**📊 현재까지의 스터디 이용 시간**\n"
         days = ["월", "화", "수", "목", "금", "토", "일"]
         
         for i, users in self.user_total_time.items():

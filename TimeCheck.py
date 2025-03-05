@@ -39,6 +39,12 @@ class VoiceTrackerBot(discord.Client):
         print(f'Logged in as {self.user}')
         self.loop.create_task(self.send_weekly_summary())
 
+    async def on_message(self, message):
+        if message.author.bot:  # 봇이 보낸 메시지는 무시
+            return
+        if message.content == "!중간정산":
+            await self.send_intermediate_summary(message.channel)
+
     async def on_voice_state_update(self, member, before, after):
         now = datetime.now(self.KST)
         weekday = str(now.weekday())
@@ -59,6 +65,23 @@ class VoiceTrackerBot(discord.Client):
                     self.save_data()
                     if channel:
                         await channel.send(f"🔴 {join_time.strftime('%H:%M:%S')} ~ {now.strftime('%H:%M:%S')} ({member.display_name})")
+
+    async def send_intermediate_summary(self, channel):
+        """현재까지의 누적 음성 사용 시간을 정산하여 출력"""
+        summary = "**📊 현재까지의 음성 채널 이용 시간**\n"
+        days = ["월", "화", "수", "목", "금", "토", "일"]
+        
+        for i, users in self.user_total_time.items():
+            summary += f"🗓 {days[int(i)]}요일:\n"
+            if not users:
+                summary += "  └ 기록 없음\n"
+            else:
+                for user_id, duration in users.items():
+                    hours, remainder = divmod(duration, 3600)
+                    minutes, _ = divmod(remainder, 60)
+                    summary += f"  └ <@{user_id}>: {hours}시간 {minutes}분\n"
+        
+        await channel.send(summary)
 
     async def send_weekly_summary(self):
         await self.wait_until_ready()
@@ -111,6 +134,8 @@ intents = discord.Intents.default()
 intents.voice_states = True
 intents.guilds = True
 intents.members = True
+intents.messages = True  # 메시지 관련 인텐트 활성화
+intents.message_content = True  # 메시지 내용을 읽을 수 있도록 추가!
 
 client = VoiceTrackerBot(intents=intents)
 client.run(TOKEN)

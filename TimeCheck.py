@@ -67,7 +67,7 @@ class VoiceTrackerBot(discord.Client):
                         await channel.send(f"🔴 {join_time.strftime('%H:%M:%S')} ~ {now.strftime('%H:%M:%S')} ({member.display_name})")
 
     async def send_intermediate_summary(self, channel):
-        """현재까지의 누적 음성 사용 시간을 정산하여 출력"""
+        """현재까지의 누적 스터디 시간을 정산하여 출력"""
         summary = "**📊 현재까지의 음성 채널 이용 시간**\n"
         days = ["월", "화", "수", "목", "금", "토", "일"]
         
@@ -94,7 +94,7 @@ class VoiceTrackerBot(discord.Client):
                 target_time += timedelta(days=(7 - now.weekday()) % 7)
             await asyncio.sleep((target_time - now).total_seconds())
 
-            summary = "**📊 주간 음성 채널 이용 요약**\n"
+            summary = "**📊 주간 스터디 이용 요약**\n"
             days = ["월", "화", "수", "목", "금", "토", "일"]
             successful_users, failed_users = [], []
 
@@ -121,8 +121,8 @@ class VoiceTrackerBot(discord.Client):
                         else:
                             failed_users.append(f"<@{user_id}>")
             
-            summary += f"\n**✅ 성공한 유저**: {', '.join(successful_users) if successful_users else '없음'}\n"
-            summary += f"**❌ 실패한 유저**: {', '.join(failed_users) if failed_users else '없음'}\n"
+            summary += f"\n**✅ 성공한 닝겐**: {', '.join(successful_users) if successful_users else '없음'}\n"
+            summary += f"**❌ 실패한 닝겐**: {', '.join(failed_users) if failed_users else '없음'}\n"
             channel = self.get_channel(CHANNEL_ID)
             if channel:
                 await channel.send(summary)

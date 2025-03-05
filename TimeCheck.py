@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timedelta
 import pytz
 import os
+import re
 
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 CHANNEL_ID = 1346156878111182910
@@ -44,6 +45,11 @@ class VoiceTrackerBot(discord.Client):
             return
         if message.content == "!중간정산":
             await self.send_intermediate_summary(message.channel)
+        elif message.content == "!진행도":
+            await self.send_progress_status(message.channel)
+        elif re.match(r"^!\d+$", message.content):  # "!숫자" 형식인지 확인
+            minutes = int(message.content[1:])  # 숫자 부분만 추출
+            await self.set_alarm(message, minutes)
 
     async def on_voice_state_update(self, member, before, after):
         now = datetime.now(self.KST)
@@ -82,6 +88,28 @@ class VoiceTrackerBot(discord.Client):
                     summary += f"  └ <@{user_id}>: {hours}시간 {minutes}분\n"
         
         await channel.send(summary)
+    
+    async def send_progress_status(self, channel):
+        """현재 음성 채널에 있는 사람들의 진행도 출력"""
+        now = datetime.now(self.KST)
+        if not self.user_join_times:
+            await channel.send("현재 음성 채널에 있는 사람이 없습니다.")
+            return
+        
+        summary = "**🔄 현재 진행도 현황**\n"
+        for user_id, join_time in self.user_join_times.items():
+            duration = now - join_time
+            hours, remainder = divmod(duration.seconds, 3600)
+            minutes, _ = divmod(remainder, 60)
+            summary += f"🔹 <@{user_id}>: {hours}시간 {minutes}분째 진행 중\n"
+        
+        await channel.send(summary)
+
+    async def set_alarm(self, message, minutes):
+        """입력된 시간(분) 후에 알람을 보냄"""
+        await message.channel.send(f"⏳ {minutes}분 뒤에 알람을 설정했습니다! ({message.author.mention})")
+        await asyncio.sleep(minutes * 60)  # 입력된 분 * 60초 대기
+        await message.channel.send(f"⏰ {minutes}분이 지났습니다! ({message.author.mention})")
 
     async def send_weekly_summary(self):
         await self.wait_until_ready()

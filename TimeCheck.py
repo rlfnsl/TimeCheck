@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import pytz
 import os
 import re
+from collections import defaultdict
 
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 CHANNEL_ID = 1346156878111182910
@@ -144,38 +145,51 @@ class VoiceTrackerBot(discord.Client):
                 target_time += timedelta(days=(7 - now.weekday()) % 7)
             await asyncio.sleep((target_time - now).total_seconds())
 
+            user_total_time = defaultdict(int)
+            user_active_days = defaultdict(int)
+
             summary = "**📊 주간 스터디 이용 요약**\n"
             days = ["월", "화", "수", "목", "금", "토", "일"]
-            successful_users, failed_users = [], []
+            successful_users = []
+            failed_users = []
 
-            for i, users in self.user_total_time.items():
-                summary += f"🗓 {days[int(i)]}요일:\n"
-                if not users:
-                    summary += "  └ 기록 없음\n"
+            for day, records in self.user_total_time.items():  # ✅ 수정: study_records → self.user_total_time
+                for user_id, seconds in records.items():
+                    user_total_time[user_id] += seconds
+                    user_active_days[user_id] += 1  # 출석한 날 수 카운트
+
+            for user_id, total_time in user_total_time.items():
+                active_days = user_active_days[user_id]
+
+                if active_days == 1:
+                    failed_users.append(f"<@{user_id}>")  # 1일만 공부 → 실패
+                    continue
+
+                if active_days == 2 and total_time < 4 * 3600:
+                    failed_users.append(f"<@{user_id}>")  # 2일 공부했지만 4시간 미만 → 실패
+                    continue
+
+                if total_time >= 4 * 3600:
+                    successful_users.append(f"<@{user_id}>")  # 4시간 이상 공부 → 성공
                 else:
-                    for user_id, duration in users.items():
-                        hours, remainder = divmod(duration, 3600)
-                        minutes, _ = divmod(remainder, 60)
-                        summary += f"  └ <@{user_id}>: {hours}시간 {minutes}분\n"
-                    
-                    for user_id, total_time in users.items():
-                        used_days = sum(1 for j in range(7) if str(user_id) in self.user_total_time[str(j)])
-                        if used_days == 1:
-                            failed_users.append(f"<@{user_id}>")
-                            continue
-                        if used_days == 2 and total_time < 4 * 3600:
-                            failed_users.append(f"<@{user_id}>")
-                            continue
-                        if total_time >= 4 * 3600:
-                            successful_users.append(f"<@{user_id}>")
-                        else:
-                            failed_users.append(f"<@{user_id}>")
-            
+                    failed_users.append(f"<@{user_id}>")  # 그 외 → 실패
+
+            summary += "\n".join([
+                f"🗓 {days[int(day)]}요일:\n" + (
+                    "\n".join([f"  └ <@{user_id}>: {seconds // 3600}시간 {seconds % 3600 // 60}분"
+                               for user_id, seconds in records.items()])
+                    if records else "  └ 기록 없음"
+                )
+                for day, records in self.user_total_time.items()
+            ])
+
             summary += f"\n**✅ 성공한 닝겐**: {', '.join(successful_users) if successful_users else '없음'}\n"
             summary += f"**❌ 실패한 닝겐**: {', '.join(failed_users) if failed_users else '없음'}\n"
+
             channel = self.get_channel(CHANNEL_ID)
             if channel:
                 await channel.send(summary)
+
             self.user_total_time = {str(i): {} for i in range(7)}
             self.user_daily_time = {str(i): {} for i in range(7)}
             self.save_data()

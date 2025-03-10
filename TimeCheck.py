@@ -49,6 +49,8 @@ class VoiceTrackerBot(discord.Client):
             await self.send_intermediate_summary(message.channel)
         elif message.content == "!진행도":
             await self.send_progress_status(message.channel)
+        elif message.content == "!현재상황":
+            await self.send_weekly_summary_Test(message.channel)
         elif re.match(r"^!\d+$", message.content):  # "!숫자" 형식인지 확인
             minutes = int(message.content[1:])  # 숫자 부분만 추출
             await self.set_alarm(message, minutes)
@@ -135,44 +137,98 @@ class VoiceTrackerBot(discord.Client):
             await message.channel.send(f"⚠️ {message.author.mention}, 삭제할 알람이 없습니다!")
 
     async def send_weekly_summary(self):
-        await self.wait_until_ready()
-        while not self.is_closed():
-            now = datetime.now(self.KST)
-            target_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            if now.weekday() == 0 and now >= target_time:
-                target_time += timedelta(days=7)
-            else:
-                target_time += timedelta(days=(7 - now.weekday()) % 7)
-            await asyncio.sleep((target_time - now).total_seconds())
+            await self.wait_until_ready()
+            while not self.is_closed():
+                now = datetime.now(self.KST)
+                target_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                if now.weekday() == 0 and now >= target_time:
+                    target_time += timedelta(days=7)
+                else:
+                    target_time += timedelta(days=(7 - now.weekday()) % 7)
+                await asyncio.sleep((target_time - now).total_seconds())
 
+                user_total_time = defaultdict(int)
+                user_active_days = defaultdict(int)
+                daily_hours = defaultdict(lambda: defaultdict(int))
+
+                summary = "**📊 주간 스터디 이용 요약**\n"
+                days = ["월", "화", "수", "목", "금", "토", "일"]
+                successful_users = []
+                failed_users = []
+
+                for day, records in self.user_total_time.items():
+                    for user_id, seconds in records.items():
+                        daily_hours[user_id][day] = seconds // 3600  # 하루 공부한 시간(시간 단위)
+                        user_active_days[user_id] += 1
+
+                for user_id, active_days in user_active_days.items():
+                    valid_total_time = 0
+                    valid_days = 0
+
+                    for day, hours in daily_hours[user_id].items():
+                        if active_days == 2 and hours >= 2:  # 2일 공부한 경우, 하루 2시간 이상 필수
+                            valid_total_time += hours * 3600
+                            valid_days += 1
+                        elif active_days >= 3 and hours >= 1:  # 3일 이상 공부한 경우, 하루 1시간 이상 필수
+                            valid_total_time += hours * 3600
+                            valid_days += 1
+
+                    if valid_days < 2 or (valid_days == 2 and valid_total_time < 4 * 3600):
+                        failed_users.append(f"<@{user_id}>")
+                    else:
+                        successful_users.append(f"<@{user_id}>")
+
+                summary += "\n".join([
+                    f"🗓 {days[int(day)]}요일:\n" + (
+                        "\n".join([f"  └ <@{user_id}>: {seconds // 3600}시간 {seconds % 3600 // 60}분"
+                                for user_id, seconds in records.items()])
+                        if records else "  └ 기록 없음"
+                    )
+                    for day, records in self.user_total_time.items()
+                ])
+
+                summary += f"\n**✅ 성공한 닝겐**: {', '.join(successful_users) if successful_users else '없음'}\n"
+                summary += f"**❌ 실패한 닝겐**: {', '.join(failed_users) if failed_users else '없음'}\n"
+
+                channel = self.get_channel(CHANNEL_ID)
+                if channel:
+                    await channel.send(summary)
+
+                self.user_total_time = {str(i): {} for i in range(7)}
+                self.user_daily_time = {str(i): {} for i in range(7)}
+                self.save_data()
+
+    async def send_weekly_summary_Test(self, channel):
             user_total_time = defaultdict(int)
             user_active_days = defaultdict(int)
+            daily_hours = defaultdict(lambda: defaultdict(int))
 
             summary = "**📊 주간 스터디 이용 요약**\n"
             days = ["월", "화", "수", "목", "금", "토", "일"]
             successful_users = []
             failed_users = []
 
-            for day, records in self.user_total_time.items():  # ✅ 수정: study_records → self.user_total_time
+            for day, records in self.user_total_time.items():
                 for user_id, seconds in records.items():
-                    user_total_time[user_id] += seconds
-                    user_active_days[user_id] += 1  # 출석한 날 수 카운트
+                    daily_hours[user_id][day] = seconds // 3600  # 하루 공부한 시간(시간 단위)
+                    user_active_days[user_id] += 1
 
-            for user_id, total_time in user_total_time.items():
-                active_days = user_active_days[user_id]
+            for user_id, active_days in user_active_days.items():
+                valid_total_time = 0
+                valid_days = 0
 
-                if active_days == 1:
-                    failed_users.append(f"<@{user_id}>")  # 1일만 공부 → 실패
-                    continue
+                for day, hours in daily_hours[user_id].items():
+                    if active_days == 2 and hours >= 2:  # 2일 공부한 경우, 하루 2시간 이상 필수
+                        valid_total_time += hours * 3600
+                        valid_days += 1
+                    elif active_days >= 3 and hours >= 1:  # 3일 이상 공부한 경우, 하루 1시간 이상 필수
+                        valid_total_time += hours * 3600
+                        valid_days += 1
 
-                if active_days == 2 and total_time < 4 * 3600:
-                    failed_users.append(f"<@{user_id}>")  # 2일 공부했지만 4시간 미만 → 실패
-                    continue
-
-                if total_time >= 4 * 3600:
-                    successful_users.append(f"<@{user_id}>")  # 4시간 이상 공부 → 성공
+                if valid_days < 2 or (valid_days == 2 and valid_total_time < 4 * 3600):
+                    failed_users.append(f"<@{user_id}>")
                 else:
-                    failed_users.append(f"<@{user_id}>")  # 그 외 → 실패
+                    successful_users.append(f"<@{user_id}>")
 
             summary += "\n".join([
                 f"🗓 {days[int(day)]}요일:\n" + (
@@ -186,13 +242,7 @@ class VoiceTrackerBot(discord.Client):
             summary += f"\n**✅ 성공한 닝겐**: {', '.join(successful_users) if successful_users else '없음'}\n"
             summary += f"**❌ 실패한 닝겐**: {', '.join(failed_users) if failed_users else '없음'}\n"
 
-            channel = self.get_channel(CHANNEL_ID)
-            if channel:
-                await channel.send(summary)
-
-            self.user_total_time = {str(i): {} for i in range(7)}
-            self.user_daily_time = {str(i): {} for i in range(7)}
-            self.save_data()
+            await channel.send(summary)  # 채널에 메시지 전송
 
 intents = discord.Intents.default()
 intents.voice_states = True

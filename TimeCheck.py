@@ -158,22 +158,23 @@ class VoiceTrackerBot(discord.Client):
 
                 for day, records in self.user_total_time.items():
                     for user_id, seconds in records.items():
-                        daily_hours[user_id][day] = seconds // 3600  # 하루 공부한 시간(시간 단위)
+                        daily_hours[user_id][day] = seconds  # 초 단위 그대로 저장
                         user_active_days[user_id] += 1
 
                 for user_id, active_days in user_active_days.items():
                     valid_total_time = 0
                     valid_days = 0
 
-                    for day, hours in daily_hours[user_id].items():
-                        if active_days == 2 and hours >= 2:  # 2일 공부한 경우, 하루 2시간 이상 필수
-                            valid_total_time += hours * 3600
+                    for day, seconds in daily_hours[user_id].items():
+                        hours = seconds / 3600  # 정확한 시간 계산
+                        if active_days == 2 and hours >= 2:  
+                            valid_total_time += seconds  # 초 단위 합산
                             valid_days += 1
-                        elif active_days >= 3 and hours >= 1:  # 3일 이상 공부한 경우, 하루 1시간 이상 필수
-                            valid_total_time += hours * 3600
+                        elif active_days >= 3 and hours >= 1:
+                            valid_total_time += seconds
                             valid_days += 1
 
-                    if valid_days < 2 or (valid_days == 2 and valid_total_time < 4 * 3600):
+                    if valid_days < 2 or valid_total_time < 4 * 3600:
                         failed_users.append(f"<@{user_id}>")
                     else:
                         successful_users.append(f"<@{user_id}>")
@@ -210,22 +211,23 @@ class VoiceTrackerBot(discord.Client):
 
             for day, records in self.user_total_time.items():
                 for user_id, seconds in records.items():
-                    daily_hours[user_id][day] = seconds // 3600  # 하루 공부한 시간(시간 단위)
+                    daily_hours[user_id][day] = seconds  # 초 단위 그대로 저장
                     user_active_days[user_id] += 1
 
             for user_id, active_days in user_active_days.items():
                 valid_total_time = 0
                 valid_days = 0
 
-                for day, hours in daily_hours[user_id].items():
-                    if active_days == 2 and hours >= 2:  # 2일 공부한 경우, 하루 2시간 이상 필수
-                        valid_total_time += hours * 3600
+                for day, seconds in daily_hours[user_id].items():
+                    hours = seconds / 3600  # 정확한 시간 계산
+                    if active_days == 2 and hours >= 2:  
+                        valid_total_time += seconds  # 초 단위 합산
                         valid_days += 1
-                    elif active_days >= 3 and hours >= 1:  # 3일 이상 공부한 경우, 하루 1시간 이상 필수
-                        valid_total_time += hours * 3600
+                    elif active_days >= 3 and hours >= 1:
+                        valid_total_time += seconds
                         valid_days += 1
 
-                if valid_days < 2 or (valid_days == 2 and valid_total_time < 4 * 3600):
+                if valid_days < 2 or valid_total_time < 4 * 3600:
                     failed_users.append(f"<@{user_id}>")
                 else:
                     successful_users.append(f"<@{user_id}>")
@@ -233,7 +235,7 @@ class VoiceTrackerBot(discord.Client):
             summary += "\n".join([
                 f"🗓 {days[int(day)]}요일:\n" + (
                     "\n".join([f"  └ <@{user_id}>: {seconds // 3600}시간 {seconds % 3600 // 60}분"
-                               for user_id, seconds in records.items()])
+                            for user_id, seconds in records.items()])
                     if records else "  └ 기록 없음"
                 )
                 for day, records in self.user_total_time.items()
@@ -242,7 +244,8 @@ class VoiceTrackerBot(discord.Client):
             summary += f"\n**✅ 성공한 닝겐**: {', '.join(successful_users) if successful_users else '없음'}\n"
             summary += f"**❌ 실패한 닝겐**: {', '.join(failed_users) if failed_users else '없음'}\n"
 
-            await channel.send(summary)  # 채널에 메시지 전송
+            await channel.send(summary)
+
 
 intents = discord.Intents.default()
 intents.voice_states = True

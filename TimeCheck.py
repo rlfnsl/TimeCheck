@@ -1,15 +1,16 @@
 import discord
 import asyncio
 import json
-from datetime import datetime, timedelta
-import pytz
 import os
 import re
+from datetime import datetime, timedelta
+import pytz
 from collections import defaultdict
 
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 CHANNEL_ID = 1346156878111182910
 DATA_FILE = "voice_data.json"
+EXCLUDED_USERS_FILE = "excluded_users.json"
 
 class VoiceTrackerBot(discord.Client):
     def __init__(self, intents):
@@ -19,7 +20,9 @@ class VoiceTrackerBot(discord.Client):
         self.user_total_time = {str(i): {} for i in range(7)}  # {요일: {유저ID: 누적시간}}
         self.user_daily_time = {str(i): {} for i in range(7)}  # {요일: {유저ID: 하루 이용 시간}}
         self.alarms = {}  # ✅ 알람 저장하는 딕셔너리 추가 ✅
+        self.excluded_users = set()  # 제외된 유저 ID 목록
         self.load_data()
+        self.load_excluded_users()
 
     def load_data(self):
         try:
@@ -29,7 +32,18 @@ class VoiceTrackerBot(discord.Client):
                 self.user_daily_time = data.get("user_daily_time", {str(i): {} for i in range(7)})
         except FileNotFoundError:
             self.save_data()
-
+    
+    def load_excluded_users(self):
+        try:
+            with open(EXCLUDED_USERS_FILE, "r", encoding="utf-8") as f:
+                self.excluded_users = set(json.load(f))
+        except FileNotFoundError:
+            self.excluded_users = set()
+    
+    def save_excluded_users(self):
+        with open(EXCLUDED_USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(list(self.excluded_users), f, indent=4)
+    
     def save_data(self):
         data = {
             "user_total_time": self.user_total_time,
@@ -51,6 +65,18 @@ class VoiceTrackerBot(discord.Client):
             await self.send_progress_status(message.channel)
         elif message.content == "!현재상황":
             await self.send_weekly_summary_Test(message.channel)
+        elif message.content == "!제외":
+            today = datetime.now(self.KST).weekday()
+            if today in [0, 1, 2]:  # 월(0), 화(1), 수(2)만 제외 가능
+                self.excluded_users.add(str(message.author.id))
+                self.save_excluded_users()
+                await message.channel.send(f"🚫 {message.author.mention}, 주간 요약에서 제외되었습니다.")
+            else:
+                await message.channel.send(f"⚠️ {message.author.mention}, 월, 화, 수요일에만 제외할 수 있습니다.")
+        elif message.content == "!제외취소":
+            self.excluded_users.discard(str(message.author.id))
+            self.save_excluded_users()
+            await message.channel.send(f"✅ {message.author.mention}, 주간 요약에 다시 포함됩니다.")
         elif re.match(r"^!\d+$", message.content):  # "!숫자" 형식인지 확인
             minutes = int(message.content[1:])  # 숫자 부분만 추출
             await self.set_alarm(message, minutes)
@@ -151,45 +177,7 @@ class VoiceTrackerBot(discord.Client):
                 user_active_days = defaultdict(int)
                 daily_hours = defaultdict(lambda: defaultdict(int))
 
-                summary = "**📊 주간 스터디 이용 요약**\n"
-                days = ["월", "화", "수", "목", "금", "토", "일"]
-                successful_users = []
-                failed_users = []
-
-                for day, records in self.user_total_time.items():
-                    for user_id, seconds in records.items():
-                        daily_hours[user_id][day] = seconds  # 초 단위 그대로 저장
-                        user_active_days[user_id] += 1
-
-                for user_id, active_days in user_active_days.items():
-                    valid_total_time = 0
-                    valid_days = 0
-
-                    for day, seconds in daily_hours[user_id].items():
-                        hours = seconds / 3600  # 정확한 시간 계산
-                        if active_days == 2 and hours >= 2:  
-                            valid_total_time += seconds  # 초 단위 합산
-                            valid_days += 1
-                        elif active_days >= 3 and hours >= 1:
-                            valid_total_time += seconds
-                            valid_days += 1
-
-                    if valid_days < 2 or valid_total_time < 4 * 3600:
-                        failed_users.append(f"<@{user_id}>")
-                    else:
-                        successful_users.append(f"<@{user_id}>")
-
-                summary += "\n".join([
-                    f"🗓 {days[int(day)]}요일:\n" + (
-                        "\n".join([f"  └ <@{user_id}>: {seconds // 3600}시간 {seconds % 3600 // 60}분"
-                                for user_id, seconds in records.items()])
-                        if records else "  └ 기록 없음"
-                    )
-                    for day, records in self.user_total_time.items()
-                ])
-
-                summary += f"\n**✅ 성공한 닝겐**: {', '.join(successful_users) if successful_users else '없음'}\n"
-                summary += f"**❌ 실패한 닝겐**: {', '.join(failed_users) if failed_users else '없음'}\n"
+                summary = await self.generate_weekly_summary()
 
                 channel = self.get_channel(CHANNEL_ID)
                 if channel:
@@ -197,54 +185,64 @@ class VoiceTrackerBot(discord.Client):
 
                 self.user_total_time = {str(i): {} for i in range(7)}
                 self.user_daily_time = {str(i): {} for i in range(7)}
+                self.excluded_users.clear()
                 self.save_data()
+                self.save_excluded_users()
 
     async def send_weekly_summary_Test(self, channel):
-            user_total_time = defaultdict(int)
-            user_active_days = defaultdict(int)
-            daily_hours = defaultdict(lambda: defaultdict(int))
+        """명령어로 호출 시 주간 요약을 보내는 함수"""
+        summary = await self.generate_weekly_summary()
+        await channel.send(summary)
 
-            summary = "**📊 주간 스터디 이용 요약**\n"
-            days = ["월", "화", "수", "목", "금", "토", "일"]
-            successful_users = []
-            failed_users = []
+    async def generate_weekly_summary(self):
+        """주간 스터디 이용 요약을 생성하는 함수"""
+        user_total_time = defaultdict(int)
+        user_active_days = defaultdict(int)
+        daily_hours = defaultdict(lambda: defaultdict(int))
 
-            for day, records in self.user_total_time.items():
-                for user_id, seconds in records.items():
-                    daily_hours[user_id][day] = seconds  # 초 단위 그대로 저장
-                    user_active_days[user_id] += 1
+        summary = "**📊 주간 스터디 이용 요약**\n"
+        days = ["월", "화", "수", "목", "금", "토", "일"]
+        successful_users = []
+        failed_users = []
 
-            for user_id, active_days in user_active_days.items():
-                valid_total_time = 0
-                valid_days = 0
+        for day, records in self.user_total_time.items():
+            for user_id, seconds in records.items():
+                if user_id in self.excluded_users:
+                    continue  # 제외된 유저는 건너뜀
+                daily_hours[user_id][day] = seconds  # 초 단위 그대로 저장
+                user_active_days[user_id] += 1
 
-                for day, seconds in daily_hours[user_id].items():
-                    hours = seconds / 3600  # 정확한 시간 계산
-                    if active_days == 2 and hours >= 2:  
-                        valid_total_time += seconds  # 초 단위 합산
-                        valid_days += 1
-                    elif active_days >= 3 and hours >= 1:
-                        valid_total_time += seconds
-                        valid_days += 1
+        for user_id, active_days in user_active_days.items():
+            valid_total_time = 0
+            valid_days = 0
 
-                if valid_days < 2 or valid_total_time < 4 * 3600:
-                    failed_users.append(f"<@{user_id}>")
-                else:
-                    successful_users.append(f"<@{user_id}>")
+            for day, seconds in daily_hours[user_id].items():
+                hours = seconds / 3600  # 정확한 시간 계산
+                if active_days == 2 and hours >= 2:  
+                    valid_total_time += seconds  # 초 단위 합산
+                    valid_days += 1
+                elif active_days >= 3 and hours >= 1:
+                    valid_total_time += seconds
+                    valid_days += 1
 
-            summary += "\n".join([
-                f"🗓 {days[int(day)]}요일:\n" + (
-                    "\n".join([f"  └ <@{user_id}>: {seconds // 3600}시간 {seconds % 3600 // 60}분"
-                            for user_id, seconds in records.items()])
-                    if records else "  └ 기록 없음"
-                )
-                for day, records in self.user_total_time.items()
-            ])
+            if valid_days < 2 or valid_total_time < 4 * 3600:
+                failed_users.append(f"<@{user_id}>")
+            else:
+                successful_users.append(f"<@{user_id}>")
 
-            summary += f"\n**✅ 성공한 닝겐**: {', '.join(successful_users) if successful_users else '없음'}\n"
-            summary += f"**❌ 실패한 닝겐**: {', '.join(failed_users) if failed_users else '없음'}\n"
+        summary += "\n".join([
+            f"🗓 {days[int(day)]}요일:\n" + (
+                "\n".join([f"  └ <@{user_id}>: {seconds // 3600}시간 {seconds % 3600 // 60}분"
+                        for user_id, seconds in records.items()])
+                if records else "  └ 기록 없음"
+            )
+            for day, records in self.user_total_time.items()
+        ])
 
-            await channel.send(summary)
+        summary += f"\n**✅ 성공한 닝겐**: {', '.join(successful_users) if successful_users else '없음'}\n"
+        summary += f"**❌ 실패한 닝겐**: {', '.join(failed_users) if failed_users else '없음'}\n"
+
+        return summary
 
 
 intents = discord.Intents.default()

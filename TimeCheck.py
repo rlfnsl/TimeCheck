@@ -11,6 +11,7 @@ TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 CHANNEL_ID = 1346156878111182910
 DATA_FILE = "voice_data.json"
 EXCLUDED_USERS_FILE = "excluded_users.json"
+GUILD_ID = 1327633759427625012
 
 class VoiceTrackerBot(discord.Client):
     def __init__(self, intents):
@@ -196,40 +197,54 @@ class VoiceTrackerBot(discord.Client):
 
     async def generate_weekly_summary(self):
         """주간 스터디 이용 요약을 생성하는 함수"""
+        guild = self.get_guild(GUILD_ID)  # 서버 객체 가져오기
+        if not guild:
+            return "⚠️ 서버 정보를 가져올 수 없습니다."
+
+        all_members = {str(member.id): member for member in guild.members if not member.bot} 
         user_total_time = defaultdict(int)
         user_active_days = defaultdict(int)
         daily_hours = defaultdict(lambda: defaultdict(int))
 
         summary = "**📊 주간 스터디 이용 요약**\n"
         days = ["월", "화", "수", "목", "금", "토", "일"]
-        successful_users = []
-        failed_users = []
+        successful_users = set()  # ✅ 중복 방지를 위해 `set()` 사용
+        failed_users = set()  # ✅ 중복 방지를 위해 `set()` 사용
+        excluded_users_list = {f"<@{user_id}>" for user_id in self.excluded_users}  # `set` 사용
 
+        # 🔹 사용자별 총 시간 및 활성 요일 저장
         for day, records in self.user_total_time.items():
             for user_id, seconds in records.items():
                 if user_id in self.excluded_users:
                     continue  # 제외된 유저는 건너뜀
-                daily_hours[user_id][day] = seconds  # 초 단위 그대로 저장
+                daily_hours[user_id][day] = seconds
                 user_active_days[user_id] += 1
 
+        # 🔹 성공 / 실패 판별
         for user_id, active_days in user_active_days.items():
             valid_total_time = 0
             valid_days = 0
 
             for day, seconds in daily_hours[user_id].items():
-                hours = seconds / 3600  # 정확한 시간 계산
+                hours = seconds / 3600
                 if active_days == 2 and hours >= 2:  
-                    valid_total_time += seconds  # 초 단위 합산
+                    valid_total_time += seconds
                     valid_days += 1
                 elif active_days >= 3 and hours >= 1:
                     valid_total_time += seconds
                     valid_days += 1
 
             if valid_days < 2 or valid_total_time < 4 * 3600:
-                failed_users.append(f"<@{user_id}>")
+                failed_users.add(f"<@{user_id}>")  # ✅ `set`에 추가하여 중복 방지
             else:
-                successful_users.append(f"<@{user_id}>")
+                successful_users.add(f"<@{user_id}>")  # ✅ `set`에 추가하여 중복 방지
 
+        # ✅ 기록이 없는 사람도 실패한 닝겐에 추가
+        for user_id in all_members.keys():
+            if user_id not in self.user_total_time["0"] and user_id not in self.excluded_users:
+                failed_users.add(f"<@{user_id}>")  # ✅ `set`에 추가하여 중복 방지
+
+        # 🔹 요일별 기록 추가
         summary += "\n".join([
             f"🗓 {days[int(day)]}요일:\n" + (
                 "\n".join([f"  └ <@{user_id}>: {seconds // 3600}시간 {seconds % 3600 // 60}분"
@@ -239,10 +254,13 @@ class VoiceTrackerBot(discord.Client):
             for day, records in self.user_total_time.items()
         ])
 
-        summary += f"\n**✅ 성공한 닝겐**: {', '.join(successful_users) if successful_users else '없음'}\n"
-        summary += f"**❌ 실패한 닝겐**: {', '.join(failed_users) if failed_users else '없음'}\n"
+        # 🔹 최종 결과 출력 (set을 다시 리스트로 변환해서 정렬)
+        summary += f"\n**✅ 성공한 닝겐**: {', '.join(sorted(successful_users)) if successful_users else '없음'}\n"
+        summary += f"**❌ 실패한 닝겐**: {', '.join(sorted(failed_users)) if failed_users else '없음'}\n"
+        summary += f"\n🚫 **제외된 닝겐**: {', '.join(sorted(excluded_users_list)) if excluded_users_list else '없음'}"
 
         return summary
+
 
 
 intents = discord.Intents.default()

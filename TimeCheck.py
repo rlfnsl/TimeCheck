@@ -254,6 +254,9 @@ class VoiceTrackerBot(discord.Client):
             for day, records in self.user_total_time.items()
         ])
 
+        failed_users = sorted(set(failed_users) - set(successful_users))  # 성공한 유저는 실패 목록에서 제거
+        successful_users = sorted(set(successful_users))
+
         # 🔹 최종 결과 출력 (set을 다시 리스트로 변환해서 정렬)
         summary += f"\n**✅ 성공한 닝겐**: {', '.join(sorted(successful_users)) if successful_users else '없음'}\n"
         summary += f"**❌ 실패한 닝겐**: {', '.join(sorted(failed_users)) if failed_users else '없음'}\n"

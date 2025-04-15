@@ -190,6 +190,8 @@ class VoiceTrackerBot(discord.Client):
                 self.save_data()
                 self.save_excluded_users()
 
+                await asyncio.sleep(1)
+
     async def send_weekly_summary_Test(self, channel):
         """명령어로 호출 시 주간 요약을 보내는 함수"""
         summary = await self.generate_weekly_summary()

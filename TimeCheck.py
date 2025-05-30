@@ -83,6 +83,36 @@ class VoiceTrackerBot(discord.Client):
             await self.set_alarm(message, minutes)
         elif message.content == "!알람삭제":
             await self.cancel_alarm(message)
+            # !시간추가 <분>
+        elif message.content.startswith("!시간추가"):
+            parts = message.content.split()
+            if len(parts) != 2:
+                return
+            try:
+                add_minutes = int(parts[1])
+                if add_minutes <= 0:
+                    return
+            except ValueError:
+                return
+
+            now = datetime.now(self.KST)
+            weekday = str(now.weekday())
+            user_id = str(message.author.id)
+
+            self.user_total_time[weekday].setdefault(user_id, 0)
+            self.user_daily_time[weekday].setdefault(user_id, 0)
+            self.user_total_time[weekday][user_id] += add_minutes * 60
+            self.user_daily_time[weekday][user_id] += add_minutes * 60
+            self.save_data()
+
+            channel = self.get_channel(CHANNEL_ID)   # ★ 이 부분이 핵심!
+            if channel:
+                await channel.send(
+                    f"⏫ <@{user_id}> ({message.author.display_name})님이 {add_minutes}분을 수동 추가했습니다! ({now.strftime('%Y-%m-%d')})"
+                )
+            return
+
+
 
     async def on_voice_state_update(self, member, before, after):
         now = datetime.now(self.KST)

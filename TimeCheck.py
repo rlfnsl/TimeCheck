@@ -55,6 +55,9 @@ class VoiceTrackerBot(discord.Client):
 
     async def on_ready(self):
         print(f'Logged in as {self.user}')
+        channel = self.get_channel(CHANNEL_ID)
+        if channel:
+            await channel.send("✅ 디스코드 봇이 켜졌습니다!")
         self.loop.create_task(self.send_weekly_summary())
 
     async def on_message(self, message):

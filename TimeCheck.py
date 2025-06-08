@@ -265,11 +265,14 @@ class VoiceTrackerBot(discord.Client):
                 if active_days == 2 and hours >= 2:  
                     valid_total_time += seconds
                     valid_days += 1
+                elif active_days == 1 and hours >=4:
+                    valid_total_time += seconds
+                    valid_days += 1
                 elif active_days >= 3 and hours >= 1:
                     valid_total_time += seconds
                     valid_days += 1
 
-            if valid_days < 2 or valid_total_time < 4 * 3600:
+            if valid_days < 1 or valid_total_time < 4 * 3600:
                 failed_users.add(f"<@{user_id}>")  # ✅ `set`에 추가하여 중복 방지
             else:
                 successful_users.add(f"<@{user_id}>")  # ✅ `set`에 추가하여 중복 방지

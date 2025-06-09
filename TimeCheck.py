@@ -262,7 +262,7 @@ class VoiceTrackerBot(discord.Client):
 
             for day, seconds in daily_hours[user_id].items():
                 hours = seconds / 3600
-                if active_days == 2 and hours >= 2:  
+                if active_days == 2 and hours >= 1:  
                     valid_total_time += seconds
                     valid_days += 1
                 elif active_days == 1 and hours >=4:

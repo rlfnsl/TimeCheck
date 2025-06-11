@@ -11,6 +11,7 @@ TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 CHANNEL_ID = 1346156878111182910
 DATA_FILE = "voice_data.json"
 EXCLUDED_USERS_FILE = "excluded_users.json"
+JOIN_DATA_FILE = "voice_join_data.json"
 GUILD_ID = 1327633759427625012
 
 class VoiceTrackerBot(discord.Client):
@@ -24,6 +25,7 @@ class VoiceTrackerBot(discord.Client):
         self.excluded_users = set()  # 제외된 유저 ID 목록
         self.load_data()
         self.load_excluded_users()
+        self.load_user_join_times()
 
     def load_data(self):
         try:
@@ -53,11 +55,88 @@ class VoiceTrackerBot(discord.Client):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
 
+    async def load_user_join_times(self):
+        try:
+            with open(JOIN_DATA_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                now = datetime.now(self.KST)
+                recovered = {}
+                channel = self.get_channel(CHANNEL_ID)
+
+                # 🔍 현재 음성 채널에 있는 유저 목록 파악
+                guild = self.get_guild(GUILD_ID)
+                if not guild:
+                    print("[ERROR] 서버 정보를 불러오지 못했습니다.")
+                    return
+
+                # 전체 유저의 음성 상태 확인
+                voice_connected_users = {
+                    member.id
+                    for vc in guild.voice_channels
+                    for member in vc.members
+                }
+
+                for user_id_str, time_str in data.items():
+                    user_id = int(user_id_str)
+                    join_time = datetime.fromisoformat(time_str)
+                    duration = now - join_time
+                    weekday = str(join_time.weekday())
+
+                    if user_id in voice_connected_users:
+                        # 🔁 아직 음성 채널에 있으면 그대로 유지
+                        recovered[user_id] = join_time
+                        print(f"🔗 {user_id} - 여전히 음성 채널에 있음 (유지)")
+                        continue
+
+                    if duration >= timedelta(minutes=20):
+                        seconds = int(duration.total_seconds())
+
+                        # ✅ 시간 저장
+                        self.user_total_time[weekday].setdefault(user_id_str, 0)
+                        self.user_daily_time[weekday].setdefault(user_id_str, 0)
+                        self.user_total_time[weekday][user_id_str] += seconds
+                        self.user_daily_time[weekday][user_id_str] += seconds
+
+                        # ✅ 알림 전송
+                        if channel:
+                            minutes = seconds // 60
+                            await channel.send(f"🔁 <@{user_id}>님은 재부팅 중에도 {minutes}분 동안 공부하셨습니다!")
+
+                        print(f"✅ [자동기록] {user_id} - {minutes}분 인정됨")
+                    else:
+                        print(f"⏱️ [삭제] {user_id} - 음성에 없고 20분 미만 (제외)")
+
+                self.user_join_times = recovered
+                self.save_user_join_times()
+                self.save_data()
+
+        except FileNotFoundError:
+            self.user_join_times = {}
+        except Exception as e:
+            print(f"[ERROR] 유저 입장 시간 로드 실패: {e}")
+            self.user_join_times = {}
+
+
+
+
+    def save_user_join_times(self):
+        try:
+            save_dict = {
+                str(user_id): time.isoformat()
+                for user_id, time in self.user_join_times.items()
+            }
+            with open(JOIN_DATA_FILE, "w", encoding="utf-8") as f:
+                json.dump(save_dict, f, indent=4)
+        except Exception as e:
+            print(f"[ERROR] 유저 입장 시간 저장 실패: {e}")
+
     async def on_ready(self):
         print(f'Logged in as {self.user}')
         channel = self.get_channel(CHANNEL_ID)
         if channel:
             await channel.send("✅ 디스코드 봇이 켜졌습니다!")
+        
+        await self.load_user_join_times() 
         self.loop.create_task(self.send_weekly_summary())
 
     async def on_message(self, message):
@@ -123,10 +202,14 @@ class VoiceTrackerBot(discord.Client):
         channel = self.get_channel(CHANNEL_ID)
 
         if before.channel is None and after.channel is not None:
+            # 입장
             self.user_join_times[member.id] = now
+            self.save_user_join_times()  # ✅ 저장
         elif before.channel is not None and after.channel is None:
+            # 퇴장
             if member.id in self.user_join_times:
                 join_time = self.user_join_times.pop(member.id)
+                self.save_user_join_times()  # ✅ 삭제 반영
                 weekday = str(join_time.weekday())
                 duration = now - join_time
                 if duration >= timedelta(minutes=20):
